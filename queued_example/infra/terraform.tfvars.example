@@ -5,5 +5,5 @@ location        = "nbg1"
 hcloud_token    = "your-hcloud-api-token"
 ssh_port        = 50022
 instance_type   = "cpx22" # 2 vCPU
-instance_count  = 2       # = number of shards
-name            = "sharded-example"
+instance_count  = 2       # node 0 is the coordinator
+name            = "queued-example"
