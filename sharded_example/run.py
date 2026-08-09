@@ -46,6 +46,7 @@ UNREACHABLE_LIMIT = 30  # consecutive failed polls before a host counts as faile
 MISSING_LIMIT = 3  # consecutive "no job, no result" polls before failing
 
 # Hosts are ephemeral and their IPs get recycled, so skip host key checking.
+# Extended with the identity file in main() once args are parsed.
 SSH_OPTS = [
     "-o", "BatchMode=yes",
     "-o", "StrictHostKeyChecking=no",
@@ -123,6 +124,13 @@ def wait_cloud_init(host, port) -> None:
             return
         if r.returncode != 255:
             raise RuntimeError(f"cloud-init failed on {host['name']}: {r.stdout}{r.stderr}")
+        if "Permission denied" in r.stderr:
+            # Auth failures never self-heal; don't sit in the retry loop.
+            raise RuntimeError(
+                f"ssh authentication to {host['name']} failed ({r.stderr.strip()}). "
+                f"Pass the private key matching ssh_public_key in terraform.tfvars "
+                f"via --ssh-key, or load it into ssh-agent."
+            )
         if time.time() > deadline:
             raise RuntimeError(f"timed out waiting for ssh/cloud-init on {host['name']}")
         time.sleep(10)
@@ -313,7 +321,18 @@ def main() -> None:
         "--keep-infra", action="store_true",
         help="skip terraform destroy at the end",
     )
+    ap.add_argument(
+        "--ssh-key", default=None,
+        help="private key matching ssh_public_key in terraform.tfvars "
+             "(if missing, falls back to ssh-agent/default keys)",
+    )
     args = ap.parse_args()
+
+    ssh_key = Path(args.ssh_key).expanduser()
+    if ssh_key.exists():
+        SSH_OPTS.extend(["-o", f"IdentityFile={ssh_key}", "-o", "IdentitiesOnly=yes"])
+    else:
+        log(f"note: ssh key {ssh_key} not found; relying on ssh-agent/default keys")
 
     RESULTS_DIR.mkdir(parents=True, exist_ok=True)
 

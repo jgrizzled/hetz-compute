@@ -9,18 +9,6 @@ resource "hcloud_ssh_key" "admin" {
   }
 }
 
-resource "hcloud_network" "main" {
-  name     = var.name
-  ip_range = "10.0.0.0/8"
-}
-
-resource "hcloud_network_subnet" "main" {
-  network_id   = hcloud_network.main.id
-  type         = "cloud"
-  ip_range     = "10.0.0.0/24"
-  network_zone = local.dc_config.network_zone
-}
-
 resource "hcloud_firewall" "main" {
   name = var.name
   rule {
@@ -29,20 +17,6 @@ resource "hcloud_firewall" "main" {
     protocol    = "tcp"
     port        = var.ssh_port
     source_ips  = var.ssh_allowed_ips
-  }
-  rule {
-    description = "Allow Incoming ICMP Ping Requests"
-    direction   = "in"
-    protocol    = "icmp"
-    port        = ""
-    source_ips  = ["0.0.0.0/0", "::/0"]
-  }
-  rule {
-    description     = "Allow Outbound ICMP Ping Requests"
-    direction       = "out"
-    protocol        = "icmp"
-    port            = ""
-    destination_ips = ["0.0.0.0/0", "::/0"]
   }
   rule {
     description     = "Allow All Outbound TCP Traffic"
@@ -81,13 +55,6 @@ resource "hcloud_server" "worker" {
   }
 }
 
-resource "hcloud_server_network" "worker" {
-  count     = var.instance_count
-  ip        = cidrhost("10.0.0.0/24", count.index + 2)
-  server_id = hcloud_server.worker[count.index].id
-  subnet_id = hcloud_network_subnet.main.id
-}
-
 data "cloudinit_config" "config" {
   gzip          = true
   base64_encode = true
@@ -100,7 +67,6 @@ data "cloudinit_config" "config" {
       {
         ssh_port       = var.ssh_port
         ssh_public_key = var.ssh_public_key
-        tz             = local.dc_config.timezone
       }
     )
   }

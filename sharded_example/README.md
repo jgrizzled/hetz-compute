@@ -18,8 +18,9 @@ state/          local run state: downloaded shard results, collated output (giti
 
 - `terraform` and `git` on your PATH, python3.
 - A Hetzner Cloud API token.
-- An ssh key pair; the private key must be loadable by plain `ssh` (default
-  key or ssh-agent), the public key goes in the tfvars.
+- An ssh key pair; the public key goes in the tfvars, and the private key is
+  passed with `--ssh-key` (default `~/.ssh/key2`; if that file doesn't exist
+  the script falls back to ssh-agent/default keys).
 - `infra/terraform.tfvars` — copy `infra/terraform.tfvars.example` and fill in
   your token, public key, and allowed IP.
 
@@ -31,10 +32,9 @@ python3 run.py
 
 What happens, in order:
 
-1. `terraform apply` creates 2x cpx22 (2 vCPU) servers, a firewall, and a
-   private network. Idempotent: existing servers are reused.
-2. Waits for cloud-init to finish on every host (`cloud-init status --wait`);
-   the first boot takes a few minutes because of `package_upgrade`.
+1. `terraform apply` creates 2x cpx22 (2 vCPU) servers and a firewall.
+   Idempotent: existing servers are reused.
+2. Waits for cloud-init to finish on every host (`cloud-init status --wait`).
 3. Pushes the current git HEAD to a bare repo on each host
    (`git push ssh://...`) and checks it out to `~/app`. Uncommitted local
    changes are not deployed — commit first.
