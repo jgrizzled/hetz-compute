@@ -25,9 +25,8 @@ samples each (~600M total, about a minute on the demo's 3 worker vCPUs).
 
 - `terraform` and `git` on your PATH, python3.
 - A Hetzner Cloud API token.
-- An ssh key pair; the public key goes in the tfvars, and the private key is
-  passed with `--ssh-key` (default `~/.ssh/id_ed25519`; if that file doesn't
-  exist the script falls back to ssh-agent/default keys).
+- An ssh key pair; the public key goes in the tfvars, and the private key
+  must be available to ssh normally (ssh-agent or `~/.ssh` config).
 - `infra/terraform.tfvars` — copy `infra/terraform.tfvars.example` and fill in
   your token, public key, and allowed IP.
 

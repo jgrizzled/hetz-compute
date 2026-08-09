@@ -52,10 +52,7 @@ CLOUD_INIT_TIMEOUT = 1200
 UNREACHABLE_LIMIT = 30  # consecutive failed polls before a host counts as failed
 MISSING_LIMIT = 3  # consecutive polls with no worker unit before failing
 
-DEFAULT_SSH_KEY_PATH = "~/.ssh/id_ed25519"
-
 # Hosts are ephemeral and their IPs get recycled, so skip host key checking.
-# Extended with the identity file in main() once args are parsed.
 SSH_OPTS = [
     "-o", "BatchMode=yes",
     "-o", "StrictHostKeyChecking=no",
@@ -87,8 +84,10 @@ def terraform(*args: str, capture: bool = False):
 
 
 def ensure_init() -> None:
-    if not (INFRA_DIR / ".terraform").exists():
-        terraform("init", "-input=false")
+    # .terraform/terraform.tfstate holds the backend config; a bare .terraform/
+    # (e.g. from `init -backend=false`) still needs a real init.
+    if not (INFRA_DIR / ".terraform" / "terraform.tfstate").exists():
+        terraform("init", "-reconfigure", "-input=false")
 
 
 def tf_apply():
@@ -126,8 +125,8 @@ def wait_cloud_init(host, port) -> None:
             # Auth failures never self-heal; don't sit in the retry loop.
             raise RuntimeError(
                 f"ssh authentication to {host['name']} failed ({r.stderr.strip()}). "
-                f"Pass the private key matching ssh_public_key in terraform.tfvars "
-                f"via --ssh-key, or load it into ssh-agent."
+                f"Make sure the private key matching ssh_public_key in "
+                f"terraform.tfvars is available to ssh (ssh-agent or ~/.ssh)."
             )
         if time.time() > deadline:
             raise RuntimeError(f"timed out waiting for ssh/cloud-init on {host['name']}")
@@ -375,18 +374,7 @@ def main() -> None:
         "--keep-infra", action="store_true",
         help="skip terraform destroy at the end",
     )
-    ap.add_argument(
-        "--ssh-key", default=DEFAULT_SSH_KEY_PATH,
-        help="private key matching ssh_public_key in terraform.tfvars "
-             "(if missing, falls back to ssh-agent/default keys)",
-    )
     args = ap.parse_args()
-
-    ssh_key = Path(args.ssh_key).expanduser()
-    if ssh_key.exists():
-        SSH_OPTS.extend(["-o", f"IdentityFile={ssh_key}", "-o", "IdentitiesOnly=yes"])
-    else:
-        log(f"note: ssh key {ssh_key} not found; relying on ssh-agent/default keys")
 
     # Fast path: previous run already downloaded the finished queue state
     # (e.g. it was interrupted between download and destroy).
