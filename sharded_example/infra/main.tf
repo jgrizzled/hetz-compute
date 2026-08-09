@@ -69,7 +69,7 @@ resource "hcloud_server" "worker" {
   firewall_ids = [hcloud_firewall.main.id]
   user_data    = data.cloudinit_config.config.rendered
   ssh_keys     = [hcloud_ssh_key.admin.id]
-  labels       = { "createdby" : "hetz-compute-terraform" }
+  labels       = { "createdby" : "${var.name}-terraform" }
 
   # Avoid recreating the server for these, should change these manually (ansible, etc)
   lifecycle {
@@ -81,9 +81,9 @@ resource "hcloud_server" "worker" {
   }
 }
 
-resource "hcloud_server_network" "workers" {
-  count = var.instance_count
-  ip = cidrhost("10.0.0.0/24", count.index + 2)
+resource "hcloud_server_network" "worker" {
+  count     = var.instance_count
+  ip        = cidrhost("10.0.0.0/24", count.index + 2)
   server_id = hcloud_server.worker[count.index].id
   subnet_id = hcloud_network_subnet.main.id
 }
