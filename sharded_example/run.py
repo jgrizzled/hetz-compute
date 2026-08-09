@@ -45,6 +45,8 @@ CLOUD_INIT_TIMEOUT = 1200
 UNREACHABLE_LIMIT = 30  # consecutive failed polls before a host counts as failed
 MISSING_LIMIT = 3  # consecutive "no job, no result" polls before failing
 
+DEFAULT_SSH_KEY_PATH = "~/.ssh/id_ed25519"
+
 # Hosts are ephemeral and their IPs get recycled, so skip host key checking.
 # Extended with the identity file in main() once args are parsed.
 SSH_OPTS = [
@@ -322,7 +324,7 @@ def main() -> None:
         help="skip terraform destroy at the end",
     )
     ap.add_argument(
-        "--ssh-key", default=None,
+        "--ssh-key", default=DEFAULT_SSH_KEY_PATH,
         help="private key matching ssh_public_key in terraform.tfvars "
              "(if missing, falls back to ssh-agent/default keys)",
     )
