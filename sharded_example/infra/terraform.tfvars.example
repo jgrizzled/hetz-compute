@@ -1,9 +1,9 @@
-# Copy to terraform.tfvars (gitignored) and fill in your values.
-ssh_public_key  = "ssh-ed25519 AAAA... you@example"
-ssh_allowed_ips = ["203.0.113.5/32"] # your public IP
+# Copy to terraform.tfvars and fill in. Fleet size is managed by
+# `python3 run.py --hosts N` through a gitignored auto-tfvars file.
+hcloud_token    = "YOUR-HCLOUD-API-TOKEN"
+ssh_public_key  = "ssh-ed25519 AAAA... you@host"
+ssh_allowed_ips = ["YOUR.IP.ADDR.HERE/32"]
 location        = "nbg1"
-hcloud_token    = "your-hcloud-api-token"
-ssh_port        = 50022
 instance_type   = "cpx22" # 2 vCPU
-instance_count  = 2       # = number of shards
+ssh_port        = 50022
 name            = "sharded-example"

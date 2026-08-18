@@ -69,15 +69,15 @@ resource "hcloud_server" "worker" {
   firewall_ids = [hcloud_firewall.main.id]
   user_data    = data.cloudinit_config.config.rendered
   ssh_keys     = [hcloud_ssh_key.admin.id]
-  labels       = { "createdby" : "hetz-compute-terraform" }
-  
+  labels       = { "createdby" : "${var.name}-terraform" }
+
   network {
     network_id = hcloud_network.main.id
     ip         = cidrhost("10.0.0.0/24", count.index + 2)
   }
   depends_on = [hcloud_network_subnet.main]
 
-  # Avoid recreating the server for these, should change these manually (ansible, etc)
+  # Avoid recreating the server for these; change them manually if needed.
   lifecycle {
     ignore_changes = [
       user_data,

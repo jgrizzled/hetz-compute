@@ -1,0 +1,9 @@
+# Copy to terraform.tfvars and fill in. terraform.tfvars is gitignored.
+hcloud_token    = "YOUR-HCLOUD-API-TOKEN"
+ssh_public_key  = "ssh-ed25519 AAAA... you@host"
+ssh_allowed_ips = ["YOUR.IP.ADDR.HERE/32"]
+location        = "nbg1"
+instance_type   = "cpx22"
+instance_count  = 2
+ssh_port        = 50022
+name            = "hetz-compute"

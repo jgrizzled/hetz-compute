@@ -42,8 +42,10 @@ runcmd:
   - [ufw, default, allow, outgoing]
   # Allow local incoming connections
   - [ufw, allow, from, 10.0.0.0/24]
-  # Rate-limit SSH
-  - [ufw, limit, "${ssh_port}/tcp", comment, "Rate-limit SSH"]
+  # Do not use `ufw limit`: a fleet orchestrator commonly opens several SSH
+  # connections per host in quick succession, while source filtering is
+  # already enforced by Hetzner's ssh_allowed_ips cloud-firewall rule.
+  - [ufw, allow, "${ssh_port}/tcp", comment, "SSH"]
   - [ufw, --force, enable]
 
   # Bounds the amount of logs that can survive on the system

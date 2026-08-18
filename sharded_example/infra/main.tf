@@ -12,6 +12,20 @@ resource "hcloud_ssh_key" "admin" {
 resource "hcloud_firewall" "main" {
   name = var.name
   rule {
+    description = "Allow Incoming ICMP Ping Requests"
+    direction   = "in"
+    protocol    = "icmp"
+    port        = ""
+    source_ips  = ["0.0.0.0/0", "::/0"]
+  }
+  rule {
+    description     = "Allow Outbound ICMP Ping Requests"
+    direction       = "out"
+    protocol        = "icmp"
+    port            = ""
+    destination_ips = ["0.0.0.0/0", "::/0"]
+  }
+  rule {
     description = "Allow Incoming SSH Traffic"
     direction   = "in"
     protocol    = "tcp"
@@ -35,8 +49,10 @@ resource "hcloud_firewall" "main" {
 }
 
 resource "hcloud_server" "worker" {
-  count        = var.instance_count
-  name         = "${var.name}-${count.index}"
+  # Stable ids let run.py remove one idle/dead host without renumbering or
+  # replacing the rest of the fleet.
+  for_each     = toset(var.host_ids)
+  name         = "${var.name}-${each.key}"
   image        = "ubuntu-26.04"
   server_type  = var.instance_type
   location     = var.location
@@ -45,7 +61,7 @@ resource "hcloud_server" "worker" {
   ssh_keys     = [hcloud_ssh_key.admin.id]
   labels       = { "createdby" : "${var.name}-terraform" }
 
-  # Avoid recreating the server for these, should change these manually (ansible, etc)
+  # Avoid recreating the server for these; change them manually if needed.
   lifecycle {
     ignore_changes = [
       user_data,
@@ -67,6 +83,7 @@ data "cloudinit_config" "config" {
       {
         ssh_port       = var.ssh_port
         ssh_public_key = var.ssh_public_key
+        tz             = local.dc_config.timezone
       }
     )
   }
@@ -93,8 +110,8 @@ provider "hcloud" {
 output "hosts" {
   description = "Hosts"
   value = [
-    for index, server in hcloud_server.worker : {
-      index = index
+    for id, server in hcloud_server.worker : {
+      index = tonumber(id)
       name  = server.name
       ipv4  = server.ipv4_address
     }

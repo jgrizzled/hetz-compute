@@ -1,27 +1,53 @@
 # Sharded compute example
 
-Minimal demonstration of a sharded computation on Hetzner Cloud: `run.py`
-provisions servers with terraform, deploys the current git commit over ssh,
-runs one shard of a Monte Carlo pi estimation per host as a detached systemd
-job, watches progress, collates the results, and tears everything down.
+This example runs deterministic, resumable Monte Carlo batches on an elastic
+Hetzner Cloud fleet. `run.py` provisions up to `--hosts` servers, deploys the
+current Git commit, assigns one detached systemd batch at a time to each ready
+host, verifies every result, collates the estimate, and tears the fleet down.
+
+Unlike the queued example, there is no remote coordinator or service: the
+local orchestrator owns a small batch queue. This works well when each batch
+is long-lived and independently reproducible.
 
 ## Layout
 
 ```
-run.py          orchestrator (stdlib only, runs locally)
-compute.py      the worker: one shard of the pi estimation (runs on each host)
-infra/          terraform (based on ../infra-template)
-state/          local run state: downloaded shard results, collated output (gitignored)
+run.py      local orchestrator (stdlib only)
+compute.py  resumable batch worker (runs on each host)
+infra/      Terraform; workers are keyed by stable ids
+state/      assignments, staged checkpoints, results, and collation (gitignored)
 ```
+
+## Work and failure model
+
+The half-open sample range `0..--total-samples` is cut into
+`--batch-samples` jobs. Faster hosts take more jobs. The fleet starts no
+larger than the number of pending batches, and, by default, a host is removed
+as soon as the queue is empty and that host becomes idle.
+
+Each worker checkpoints after every CPU chunk. A reachable host whose unit
+dies is restarted in place; an unreachable or repeatedly failing host has its
+batch requeued and is replaced. Checkpoints are periodically staged under
+`state/checkpoints/` and uploaded to a replacement. A batch that fails on
+three hosts aborts as a likely systematic error. Downloads are validated and
+written atomically before they count as complete.
+
+Host setup and polling are bounded and concurrent. Each host becomes eligible
+for work as soon as its own cloud-init and deployment finish, rather than
+waiting behind the slowest host in the fleet.
 
 ## Prerequisites
 
-- `terraform` and `git` on your PATH, python3.
-- A Hetzner Cloud API token.
-- An ssh key pair; the public key goes in the tfvars, and the private key
-  must be available to ssh normally (ssh-agent or `~/.ssh` config).
-- `infra/terraform.tfvars` — copy `infra/terraform.tfvars.example` and fill in
-  your token, public key, and allowed IP.
+- `terraform`, `git`, and Python 3 on `PATH`.
+- A Hetzner Cloud API token and an SSH key pair.
+- `infra/terraform.tfvars`, copied from `infra/terraform.tfvars.example`, with
+  the token, public key, and your public IP filled in. The matching private key
+  must be available through ssh-agent or normal SSH configuration.
+- A committed `HEAD`. Hosts receive the latest commit, not working-tree
+  changes.
+
+Fleet size is not stored in `terraform.tfvars`; `run.py --hosts` maintains the
+gitignored `infra/hosts.auto.tfvars.json` file.
 
 ## Run
 
@@ -29,38 +55,33 @@ state/          local run state: downloaded shard results, collated output (giti
 python3 run.py
 ```
 
-What happens, in order:
+The defaults run 800 million samples as eight 100-million-sample batches on
+at most two cpx22 hosts. Tune the workload and fleet independently:
 
-1. `terraform apply` creates 2x cpx22 (2 vCPU) servers and a firewall.
-   Idempotent: existing servers are reused.
-2. Waits for cloud-init to finish on every host (`cloud-init status --wait`).
-3. Pushes the current git HEAD to a bare repo on each host
-   (`git push ssh://...`) and checks it out to `~/app`. Uncommitted local
-   changes are not deployed — commit first.
-4. Starts `compute.py` on each host via `sudo systemd-run --unit=shard-job`,
-   so the job survives with no ssh connection open.
-5. Polls every few seconds: the systemd unit state plus the worker's own
-   `status.json`/`progress.json`. Crashes (worker exception, OOM-kill, unit
-   failure) are reported per shard.
-6. When a shard finishes, its `result.json` is downloaded to
-   `state/results/shard-N.json`. When all shards are done the counts are
-   summed into `state/collated.json` and the pi estimate is printed.
-7. `terraform destroy` removes all resources. If any shard failed, the
-   servers are left up for inspection instead (rerun to retry the failed
-   shards, or destroy manually).
+```sh
+python3 run.py --total-samples 1600000000 --batch-samples 100000000 --hosts 8
+```
 
-The default workload is 800M samples total (~1 minute of compute across the
-4 vCPUs); tune with `--total-samples`. Use `--keep-infra` to skip the destroy.
+Keep at least as many batches as hosts if you want every host to contribute.
+For a cheap end-to-end orchestration smoke test:
+
+```sh
+python3 run.py --total-samples 100000 --batch-samples 50000 --hosts 1
+```
+
+Use `--keep-infra` to retain live hosts after success. Use `--keep-failed` to
+retain failed hosts for inspection while replacement hosts continue the run;
+retained failed hosts are intentionally outside the live `--hosts` cap.
 
 ## Resuming
 
-The script keeps no in-memory-only state, so it can be killed and rerun at
-any point:
+The workflow has no required in-memory-only state:
 
-- Servers live in terraform state — `apply` is a no-op if they exist.
-- A running/finished job is detected on the host itself (systemd unit +
-  status files), so it is never started twice.
-- Downloaded results under `state/results/` mark shards as complete; if all
-  are present the script skips straight to collation and destroy.
+- Terraform and `infra/hosts.auto.tfvars.json` preserve stable host ids.
+- `state/assignments.json` reconnects hosts to in-flight batches.
+- Remote and locally staged checkpoints preserve completed chunks.
+- Valid files under `state/results/` mark batches complete.
 
-To start a completely fresh run: `rm -rf state/`.
+Interrupt and rerun the same command to resume. To start a different run,
+destroy any retained infrastructure and move or remove `state/` so results
+from matching sample ranges are not reused.

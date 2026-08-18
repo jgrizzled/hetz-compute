@@ -14,7 +14,7 @@ itself and a crashed worker's tasks are automatically redistributed.
 run.py           orchestrator (stdlib only, runs locally)
 queue_server.py  work queue HTTP server (runs on the coordinator, host 0)
 worker.py        worker: leases tasks, computes, posts results (runs on every host)
-infra/           terraform (based on ../infra-template, plus a private network)
+infra/           terraform (based on ../infra_template, plus a private network)
 state/           local run state: downloaded queue state, collated output (gitignored)
 ```
 
@@ -41,22 +41,27 @@ What happens, in order:
 1. `terraform apply` creates 2x cpx22 (2 vCPU) servers, a firewall, and a
    private network (10.0.1.0/24) so the workers can reach the queue without
    exposing it publicly. Idempotent: existing resources are reused.
-2. Waits for cloud-init to finish on every host (`cloud-init status --wait`).
-3. Pushes the current git HEAD to a bare repo on each host
+2. Starts setup concurrently. Each host waits for cloud-init, including OS
+   updates and host-firewall configuration.
+3. Pushes the current git HEAD to a bare repo on each ready host
    (`git push ssh://...`) and checks it out to `~/app`. Uncommitted local
    changes are not deployed — commit first.
-4. Starts `queue_server.py` on the coordinator via
+4. As soon as the coordinator is ready, starts `queue_server.py` via
    `sudo systemd-run --unit=work-queue`, then `worker.py` on every host via
    `--unit=queue-worker`, so everything survives with no ssh connection open.
    The coordinator's worker reserves one CPU for the queue server; the other
-   host uses all of its CPUs (3 worker processes total).
+   host uses all of its CPUs (3 worker processes total). Other hosts start
+   their workers as soon as their own setup completes; there is no
+   fleet-wide setup barrier.
 5. Workers loop: `GET /task` to lease a task, compute it, `POST /result`.
    Leases expire after 60s, so tasks held by a crashed worker are handed
    out again.
 6. Polls every few seconds: queue counters (`GET /status`) plus the systemd
-   unit state on every host. A crashed worker is reported and the run
-   continues on the remaining workers; a dead queue server or dead last
-   worker aborts the run, leaving the servers up for inspection.
+   unit state on every ready host. SSH calls have keepalives and hard timeouts,
+   and workers are probed concurrently so one bad host cannot stall a large
+   fleet. Crashed queue and worker units are restarted up to three times;
+   after that, a dead worker's tasks still move to the remaining workers. An
+   unreachable coordinator or dead last worker aborts the run for inspection.
 7. When every task is done the queue state is downloaded to
    `state/queue_final.json`, the counts are summed into `state/results.json`
    (including how many tasks each worker process completed), and the pi
@@ -75,7 +80,8 @@ any point:
   `/home/admin/queue_state/queue.json` (atomic rewrite on each change); if
   the server or the whole coordinator restarts, it resumes from that file.
 - Already-running units are detected (`systemctl is-active`) and never
-  started twice; a previously crashed unit is `reset-failed` and restarted.
+  started twice; crashed queue and worker units are restarted from persistent
+  queue state.
 - A downloaded `state/queue_final.json` marks the computation finished; if
   present the script skips straight to collation and destroy.
 

@@ -38,8 +38,8 @@ variable "instance_type" {
   default     = "cpx22"
 }
 
-variable "instance_count" {
-  type        = number
-  description = "Number of instances to create (= number of shards)"
-  default     = 2
+variable "host_ids" {
+  type        = list(string)
+  description = "Stable worker ids managed by run.py via hosts.auto.tfvars.json"
+  default     = []
 }

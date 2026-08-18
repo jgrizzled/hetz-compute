@@ -1,13 +1,13 @@
 locals {
-  # Hetzner network zone for each supported location.
-  network_zones = {
-    fsn1 = "eu-central"
-    nbg1 = "eu-central"
-    hel1 = "eu-central"
-    ash  = "us-east"
-    hil  = "us-west"
-    sin  = "ap-southeast"
+  datacenter_config = {
+    fsn1 = { network_zone = "eu-central", timezone = "Europe/Berlin" }
+    nbg1 = { network_zone = "eu-central", timezone = "Europe/Berlin" }
+    hel1 = { network_zone = "eu-central", timezone = "Europe/Helsinki" }
+    ash  = { network_zone = "us-east", timezone = "America/New_York" }
+    hil  = { network_zone = "us-west", timezone = "America/Los_Angeles" }
+    sin  = { network_zone = "ap-southeast", timezone = "Asia/Singapore" }
   }
+  dc_config = local.datacenter_config[var.location]
   # Node 0 is the coordinator; all private IPs are assigned statically.
   private_ip = { for i in range(var.instance_count) : i => "10.0.1.${i + 10}" }
 }
@@ -25,6 +25,20 @@ resource "hcloud_ssh_key" "admin" {
 
 resource "hcloud_firewall" "main" {
   name = var.name
+  rule {
+    description = "Allow Incoming ICMP Ping Requests"
+    direction   = "in"
+    protocol    = "icmp"
+    port        = ""
+    source_ips  = ["0.0.0.0/0", "::/0"]
+  }
+  rule {
+    description     = "Allow Outbound ICMP Ping Requests"
+    direction       = "out"
+    protocol        = "icmp"
+    port            = ""
+    destination_ips = ["0.0.0.0/0", "::/0"]
+  }
   rule {
     description = "Allow Incoming SSH Traffic"
     direction   = "in"
@@ -59,7 +73,7 @@ resource "hcloud_network" "internal" {
 resource "hcloud_network_subnet" "internal" {
   network_id   = hcloud_network.internal.id
   type         = "cloud"
-  network_zone = local.network_zones[var.location]
+  network_zone = local.dc_config.network_zone
   ip_range     = "10.0.1.0/24"
 }
 
@@ -81,7 +95,7 @@ resource "hcloud_server" "node" {
 
   depends_on = [hcloud_network_subnet.internal]
 
-  # Avoid recreating the server for these, should change these manually (ansible, etc)
+  # Avoid recreating the server for these; change them manually if needed.
   lifecycle {
     ignore_changes = [
       user_data,
@@ -103,6 +117,7 @@ data "cloudinit_config" "config" {
       {
         ssh_port       = var.ssh_port
         ssh_public_key = var.ssh_public_key
+        tz             = local.dc_config.timezone
       }
     )
   }
